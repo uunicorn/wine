@@ -24,3 +24,6 @@ Configured with:
 
 
 Replace <your_source_tree_location> whith a place where you checked out the sources.
+
+USB VID:PID is hardcoded in dlls/winusb/winusb.c. 
+Change it to whatever you have. By default it is 138a:0097.
