@@ -7,11 +7,13 @@
 @ stdcall BCryptCreateHash(ptr ptr ptr long ptr long long)
 @ stdcall BCryptDecrypt(ptr ptr long ptr ptr long ptr long ptr long)
 @ stub BCryptDeleteContext
-@ stub BCryptDeriveKey
+#@ stub BCryptDeriveKey
+@ stdcall BCryptDeriveKey(ptr ptr ptr ptr long long long)
 @ stdcall BCryptDeriveKeyPBKDF2(ptr ptr long ptr long int64 ptr long long)
 @ stdcall BCryptDestroyHash(ptr)
 @ stdcall BCryptDestroyKey(ptr)
-@ stub BCryptDestroySecret
+#@ stub BCryptDestroySecret
+@ stdcall BCryptDestroySecret(ptr)
 @ stdcall BCryptDuplicateHash(ptr ptr ptr long long)
 @ stdcall BCryptDuplicateKey(ptr ptr ptr long long)
 @ stdcall BCryptEncrypt(ptr ptr long ptr ptr long ptr long ptr long)
@@ -44,11 +46,12 @@
 @ stdcall BCryptRemoveContextFunction(long wstr long wstr)
 @ stdcall BCryptRemoveContextFunctionProvider(long wstr long wstr wstr)
 @ stub BCryptResolveProviders
-@ stub BCryptSecretAgreement
+#@ stub BCryptSecretAgreement
+@ stdcall BCryptSecretAgreement(ptr ptr ptr long)
 @ stub BCryptSetAuditingInterface
 @ stub BCryptSetContextFunctionProperty
 @ stdcall BCryptSetProperty(ptr wstr ptr long long)
-@ stub BCryptSignHash
+@ stdcall BCryptSignHash(ptr ptr long ptr long ptr long)
 @ stub BCryptUnregisterConfigChangeNotify
 @ stdcall BCryptUnregisterProvider(wstr)
 @ stdcall BCryptVerifySignature(ptr ptr ptr long ptr long long)

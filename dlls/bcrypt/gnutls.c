@@ -23,6 +23,7 @@
 
 #include <stdarg.h>
 #ifdef HAVE_GNUTLS_CIPHER_INIT
+#include <gnutls/x509.h>
 #include <gnutls/gnutls.h>
 #include <gnutls/crypto.h>
 #include <gnutls/abstract.h>
@@ -32,10 +33,13 @@
 #define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
+#include "wincrypt.h"
+
 #include "ntsecapi.h"
 #include "bcrypt.h"
 
 #include "bcrypt_internal.h"
+#include "secrets.h"
 
 #include "wine/debug.h"
 #include "wine/heap.h"
@@ -96,8 +100,10 @@ MAKE_FUNCPTR(gnutls_global_set_log_level);
 MAKE_FUNCPTR(gnutls_perror);
 MAKE_FUNCPTR(gnutls_privkey_deinit);
 MAKE_FUNCPTR(gnutls_privkey_init);
+MAKE_FUNCPTR(gnutls_privkey_sign_hash);
 MAKE_FUNCPTR(gnutls_pubkey_deinit);
 MAKE_FUNCPTR(gnutls_pubkey_init);
+MAKE_FUNCPTR(gnutls_strerror);
 #undef MAKE_FUNCPTR
 
 static int compat_gnutls_cipher_tag(gnutls_cipher_hd_t handle, void *tag, size_t tag_size)
@@ -185,8 +191,10 @@ BOOL gnutls_initialize(void)
     LOAD_FUNCPTR(gnutls_perror)
     LOAD_FUNCPTR(gnutls_privkey_deinit);
     LOAD_FUNCPTR(gnutls_privkey_init);
+    LOAD_FUNCPTR(gnutls_privkey_sign_hash);
     LOAD_FUNCPTR(gnutls_pubkey_deinit);
     LOAD_FUNCPTR(gnutls_pubkey_init);
+    LOAD_FUNCPTR(gnutls_strerror)
 #undef LOAD_FUNCPTR
 
     if (!(pgnutls_cipher_tag = wine_dlsym( libgnutls_handle, "gnutls_cipher_tag", NULL, 0 )))
@@ -702,6 +710,7 @@ NTSTATUS key_import_ecc( struct key *key, UCHAR *buf, ULONG len )
     switch (key->alg_id)
     {
     case ALG_ID_ECDH_P256:
+    case ALG_ID_ECDSA_P256:
         curve = GNUTLS_ECC_CURVE_SECP256R1;
         break;
 
@@ -717,6 +726,7 @@ NTSTATUS key_import_ecc( struct key *key, UCHAR *buf, ULONG len )
     }
 
     ecc_blob = (BCRYPT_ECCKEY_BLOB *)buf;
+    derive_ec_pubkey((unsigned char *)(ecc_blob + 1));
     x.data = (unsigned char *)(ecc_blob + 1);
     x.size = ecc_blob->cbKey;
     y.data = x.data + ecc_blob->cbKey;
@@ -975,6 +985,7 @@ NTSTATUS key_asymmetric_verify( struct key *key, void *padding, UCHAR *hash, ULO
 
     if (gnutls_signature.data != signature) heap_free( gnutls_signature.data );
     pgnutls_pubkey_deinit( gnutls_key );
+    FIXME("key_asymmetric_verify: %d\n", ret);
     return (ret < 0) ? STATUS_INVALID_SIGNATURE : STATUS_SUCCESS;
 }
 
@@ -992,5 +1003,137 @@ NTSTATUS key_destroy( struct key *key )
     }
     heap_free( key );
     return STATUS_SUCCESS;
+}
+
+NTSTATUS get_gnutls_ecc_key_params(
+            BCRYPT_KEY_HANDLE hKey, 
+            gnutls_ecc_curve_t *curve,
+            gnutls_datum_t *x, 
+            gnutls_datum_t *y,
+            gnutls_datum_t *d
+        )
+{
+    struct key *key = hKey;
+    
+    if (!key || key->hdr.magic != MAGIC_KEY) return STATUS_INVALID_HANDLE;
+    if(ALG_ID_ECDSA_P256 != key->alg_id && ALG_ID_ECDH_P256 != key->alg_id) {
+        ERR("wtf is this key?! %x\n", key->alg_id);
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    int ret;
+
+    if ((ret = pgnutls_privkey_export_ecc_raw( key->u.a.handle, &curve, x, y, d )))
+    {
+        FIXME("pgnutls_privkey_export_ecc_raw: %s\n", pgnutls_strerror(ret));
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS WINAPI BCryptSignHash(
+  BCRYPT_KEY_HANDLE hKey,
+  VOID              *pPaddingInfo,
+  PUCHAR            pbInput,
+  ULONG             cbInput,
+  PUCHAR            pbOutput,
+  ULONG             cbOutput,
+  ULONG             *pcbResult,
+  ULONG             dwFlags
+)
+{
+    struct key *key = hKey;
+    
+    if (!key || key->hdr.magic != MAGIC_KEY) return STATUS_INVALID_HANDLE;
+
+    FIXME( "%p, alg=%d, pad=%p inp=%p inl=%d out=%p outl=%d res=%p flags=%x\n", 
+            key, 
+            key->alg_id,
+            pPaddingInfo,
+            pbInput,
+            cbInput,
+            pbOutput,
+            cbOutput,
+            pcbResult,
+            dwFlags);
+    
+    if(ALG_ID_ECDSA_P256 == key->alg_id) {
+        if(pPaddingInfo || dwFlags) return STATUS_NOT_IMPLEMENTED;
+
+        gnutls_ecc_curve_t curve;
+        gnutls_datum_t x, y, d;
+        DWORD magic, size;
+        UCHAR *src, *dst;
+        int ret;
+
+        if ((ret = pgnutls_privkey_export_ecc_raw( key->u.a.handle, &curve, &x, &y, &d )))
+        {
+            pgnutls_perror( ret );
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if(ecc_sign(x.data, x.size,
+                    y.data, y.size,
+                    d.data, d.size,
+                    pbInput, cbInput,
+                    pbOutput)) {
+            ERR("ecc_sign failed\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+    #if 0
+int ecc_sign(PUCHAR x, PUCHAR y, PUCHAR d, PUCHAR src, ULONG src_len, PUCHAR dst);
+
+
+        gnutls_datum_t src;
+        src.data = pbInput;
+        src.size = cbInput;
+
+        gnutls_datum_t signature;
+        signature.data = NULL;
+        signature.size = 0;
+
+        int ret = pgnutls_privkey_sign_hash(
+                    key->u.a.handle, 
+                    GNUTLS_DIG_SHA256,
+                    0, 
+                    &src, 
+                    &signature);
+
+        if(GNUTLS_E_SUCCESS != ret) {
+            ERR("pgnutls_privkey_sign_hash returned %d\n", ret);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+
+        char buf1[1024];
+        DWORD cb = sizeof(buf1);
+        CERT_ECC_SIGNATURE *s = (CERT_ECC_SIGNATURE *)buf1;
+
+        if(!CryptDecodeObject(X509_ASN_ENCODING, X509_ECC_SIGNATURE, signature.data, signature.size, 0, buf1, &cb)) {
+            ERR("failed to decode fresh signature: %x\n", GetLastError());
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if(cbOutput < s->r.cbData + s->s.cbData) {
+            ERR("not enough space in pbOutput\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        memcpy(pbOutput, s->r.pbData, s->r.cbData);
+        memcpy(pbOutput+s->r.cbData, s->s.pbData, s->s.cbData);
+        *pcbResult = s->r.cbData + s->s.cbData;
+
+        char buf[1024], *p = buf;
+        for(int i=0;i<cb;i++)
+            p += sprintf(p, "%02x ", ((unsigned char*)buf1)[i]);
+        *p = 0;
+        FIXME("Generated %d signature bytes: %s\n", cb, buf);
+
+#endif
+        return STATUS_SUCCESS;
+    }
+
+    return STATUS_NOT_IMPLEMENTED;
 }
 #endif

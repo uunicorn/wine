@@ -4148,6 +4148,23 @@ static BOOL WINAPI CRYPT_AsnEncodeIssuerSerialNumber(
     return ret;
 }
 
+static BOOL WINAPI CRYPT_AsnEncodeEccSignature(
+ DWORD dwCertEncodingType, LPCSTR lpszStructType, const void *pvStructInfo,
+ DWORD dwFlags, PCRYPT_ENCODE_PARA pEncodePara, BYTE *pbEncoded,
+ DWORD *pcbEncoded)
+{
+    BOOL ret;
+    const CERT_ECC_SIGNATURE *eccSignature = pvStructInfo;
+    struct AsnEncodeSequenceItem items[] = {
+     { &eccSignature->r, CRYPT_AsnEncodeUnsignedInteger, 0 },
+     { &eccSignature->s, CRYPT_AsnEncodeUnsignedInteger, 0 },
+    };
+
+    ret = CRYPT_AsnEncodeSequence(dwCertEncodingType, items,
+     ARRAY_SIZE(items), dwFlags, pEncodePara, pbEncoded, pcbEncoded);
+    return ret;
+}
+
 static BOOL WINAPI CRYPT_AsnEncodePKCSSignerInfo(DWORD dwCertEncodingType,
  LPCSTR lpszStructType, const void *pvStructInfo, DWORD dwFlags,
  PCRYPT_ENCODE_PARA pEncodePara, BYTE *pbEncoded, DWORD *pcbEncoded)
@@ -4568,6 +4585,9 @@ static CryptEncodeObjectExFunc CRYPT_GetBuiltinEncoder(DWORD dwCertEncodingType,
             break;
         case LOWORD(CMS_SIGNER_INFO):
             encodeFunc = CRYPT_AsnEncodeCMSSignerInfo;
+            break;
+        case LOWORD(X509_ECC_SIGNATURE):
+            encodeFunc = CRYPT_AsnEncodeEccSignature;
             break;
         }
     }

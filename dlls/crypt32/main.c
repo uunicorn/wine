@@ -328,3 +328,13 @@ BOOL WINAPI CryptUnprotectMemory(void *data, DWORD len, DWORD flags)
     if (!fixme_once++) FIXME("(%p %u %08x): stub\n", data, len, flags);
     return TRUE;
 }
+
+NTSYSAPI int __cdecl _strnicmp(LPCSTR a, LPCSTR b,size_t n)
+{
+    for(int i=0;i<n;i++) {
+        int rc = a[i] - b[i];
+        if(rc)
+            return rc;
+    }
+    return 0;
+}

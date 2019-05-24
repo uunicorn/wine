@@ -1,1 +1,6 @@
+#CFLAGS = -I/usr/include/libusb-1.0
+EXTRALIBS = -lusb-1.0
+EXTRAINCL = -I/usr/include/libusb-1.0 
 MODULE    = winusb.dll
+IMPORTLIB = winusb
+C_SRCS = winusb.c
