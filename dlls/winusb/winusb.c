@@ -292,7 +292,7 @@ WinUsb_ReadPipe(
 
     printf("blackbox: usb %d <<< ", PipeID);
     for(i=0;i<*LengthTransferred;i++) {
-        if(i > 80000) {
+        if(i > 8000000) {
             printf("....");
             break;
         } else {
@@ -350,7 +350,7 @@ WinUsb_WritePipe(
     
     printf("blackbox: usb %d >>> ", PipeID);
     for(i=0;i<BufferLength;i++) {
-        if(i > 80000) {
+        if(i > 8000000) {
             printf("...");
             break;
         } else {
