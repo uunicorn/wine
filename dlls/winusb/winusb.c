@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #undef _WIN32
 #undef _WIN64
@@ -20,6 +21,7 @@ struct driver_info {
     struct libusb_device_descriptor descr;
     libusb_device_handle * dev;
     DWORD timeouts[0x100];
+    volatile char abort[0x100];
 };
 
 WINUSB_PIPE_INFORMATION info[] = {
@@ -53,7 +55,7 @@ WinUsb_GetDescriptor(
             PULONG LengthTransferred)
 {
     struct driver_info *info = InterfaceHandle;
-    int rc;
+    int rc, i;
 
     printf("USB >>>>>>>>>> WinUsb_GetDescriptor\r\n");
     rc = libusb_control_transfer(info->dev, LIBUSB_ENDPOINT_IN,
@@ -61,6 +63,10 @@ WinUsb_GetDescriptor(
                 LanguageID, Buffer, (uint16_t) BufferLength, 1000);
 
     printf("rc=%d\r\n", rc);
+    for(i=0;i<rc;i++) {
+        printf("%02x", Buffer[i]);
+    }
+    printf("\r\n");
     *LengthTransferred = rc;
 
     if(rc < 0)
@@ -107,8 +113,14 @@ WinUsb_ControlTransfer(
                 SetupPacket.Length);
 
     printf("Before: ");
-    for(i=0;i<BufferLength;i++)
-        printf("%02x ", Buffer[i]);
+    for(i=0;i<BufferLength;i++) {
+        if(i > 8000000) {
+            printf("...");
+            break;
+        } else {
+            printf("%02x", Buffer[i]);
+        }
+    }
     printf("\r\n");
     rc = libusb_control_transfer(info->dev,
         SetupPacket.RequestType, SetupPacket.Request, SetupPacket.Value, SetupPacket.Index,
@@ -141,7 +153,6 @@ WinUsb_ReadPipe(
     WINUSB_PIPE_INFORMATION *wpi = NULL;
     int i, rc;
 
-    //usleep(30000);
 
     printf("USB %lx >>>>>>>>>> WinUsb_ReadPipe PipeID=%d\r\n", pthread_self(), PipeID);
 
@@ -164,17 +175,42 @@ WinUsb_ReadPipe(
                     BufferLength, 
                     (int*)LengthTransferred, 
                     dev->timeouts[PipeID]+1000);
+            //sleep(3);
             break;
 
         case UsbdPipeTypeInterrupt:
-            printf("USB >>>>>>>>>>> interrupt xfer\n");
-            rc = libusb_interrupt_transfer(
-                    dev->dev, 
-                    PipeID, 
-                    Buffer, 
-                    BufferLength, 
-                    (int*)LengthTransferred, 
-                    dev->timeouts[PipeID]);
+            printf("USB >>>>>>>>>>> interrupt xfer?\n");
+            dev->abort[PipeID] = 1;
+            for(i=0;;) {
+                rc = libusb_interrupt_transfer(
+                        dev->dev, 
+                        PipeID, 
+                        Buffer, 
+                        BufferLength, 
+                        (int*)LengthTransferred, 
+                        200);
+                
+                printf("USB >>>>>>>>>>> libusb_interrupt_transfer=%d!\n", rc);
+
+                if(rc == LIBUSB_ERROR_TIMEOUT) {
+                    if(dev->abort[PipeID] == 2) {
+                        printf("USB >>>>>>>>>>> Pipe was aborted!\n");
+                        rc = 0;
+                        break;
+                    }
+
+                    if(dev->timeouts[PipeID]) {
+                        if(i > dev->timeouts[PipeID])
+                            break;
+                        else
+                            i += 200;
+                    }
+                    continue;
+                }
+
+                break;
+            }
+            dev->abort[PipeID] = 0;
             break;
 
         default:
@@ -188,11 +224,18 @@ WinUsb_ReadPipe(
         return FALSE;
     }
     
-    
-    printf("<<< ");
-    for(i=0;i<*LengthTransferred;i++)
-        printf("%02x", Buffer[i]);
+
+    printf("usb %d <<< ", PipeID);
+    for(i=0;i<*LengthTransferred;i++) {
+        if(i > 8000000) {
+            printf("....");
+            break;
+        } else {
+            printf("%02x", Buffer[i]);
+        }
+    }
     printf("\r\n");
+
 
     return TRUE;
 }
@@ -237,12 +280,24 @@ WinUsb_WritePipe(
     struct driver_info *info = InterfaceHandle;
     int send;
 
+
     printf("USB %lx >>>>>>>>>> WinUsb_WritePipe PipeID=%x\r\n", pthread_self(), PipeID);
     
-    printf(">>> ");
-    for(i=0;i<BufferLength;i++)
-        printf("%02x", Buffer[i]);
+    printf("usb %d >>> ", PipeID);
+    for(i=0;i<BufferLength;i++) {
+        if(i > 8000000) {
+            printf("...");
+            break;
+        } else {
+            printf("%02x", Buffer[i]);
+        }
+    }
     printf("\r\n");
+
+    if(Buffer[0] == 0x10 && Buffer[1] == 0 && Buffer[2] == 0) {
+        abort();
+        return FALSE;
+    }
 
     rc = libusb_bulk_transfer(info->dev,
             PipeID,
@@ -325,7 +380,15 @@ WINBOOL WINAPI WinUsb_FlushPipe (WINUSB_INTERFACE_HANDLE InterfaceHandle, UCHAR 
 
 WINBOOL WINAPI WinUsb_AbortPipe (WINUSB_INTERFACE_HANDLE InterfaceHandle, UCHAR PipeID)
 {
-    printf("USB >>>>>>>>>> WinUsb_AbortPipe\r\n");
+    struct driver_info *dev = InterfaceHandle;
+    printf("USB >>>>>>>>>> WinUsb_AbortPipe %x\r\n", PipeID);
+    if(dev->abort[PipeID] == 1) {
+        dev->abort[PipeID] = 2;
+
+        while(dev->abort[PipeID] != 0)
+            usleep(200);
+    }
+    printf("USB >>>>>>>>>> abort complete\r\n");
     return TRUE;
 }
 
