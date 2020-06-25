@@ -20,8 +20,12 @@ struct driver_info {
     libusb_context *ctx;
     struct libusb_device_descriptor descr;
     libusb_device_handle * dev;
+
     DWORD timeouts[0x100];
     volatile char abort[0x100];
+
+    FILE *script;
+    int script_line;
 };
 
 WINUSB_PIPE_INFORMATION info[] = {
@@ -56,18 +60,53 @@ WinUsb_GetDescriptor(
 {
     struct driver_info *info = InterfaceHandle;
     int rc, i;
+    uint16_t dti = (uint16_t)((DescriptorType << 8) | Index);
 
     printf("USB >>>>>>>>>> WinUsb_GetDescriptor\r\n");
-    rc = libusb_control_transfer(info->dev, LIBUSB_ENDPOINT_IN,
-                LIBUSB_REQUEST_GET_DESCRIPTOR, (uint16_t)((DescriptorType << 8) | Index),
-                LanguageID, Buffer, (uint16_t) BufferLength, 1000);
+
+    if(info->script == NULL) {
+        rc = libusb_control_transfer(info->dev, LIBUSB_ENDPOINT_IN,
+                    LIBUSB_REQUEST_GET_DESCRIPTOR, dti,
+                    LanguageID, Buffer, (uint16_t) BufferLength, 1000);
+    }
+    else {
+        int p;
+        char dir[10];
+        char hex[8000000], *hp;
+
+        info->script_line++;
+        fscanf(info->script, "blackbox: usb %d %s %s\n", &p, dir, hex);
+        
+        if(p != dti) {
+            printf(">>>>>>>>>>>>>> wrong dtype or index on script line %d (expected %d, requested %d)\n", info->script_line, p, dti);
+            exit(0);
+        }
+        if(strcmp(dir, "dsc") != 0) {
+            printf(">>>>>>>>>>>>>> wrong direction on script line %d (expected %s, requested %s)\n", info->script_line, dir, "dsc");
+            exit(0);
+        }
+        rc=0;
+        for(hp=hex;*hp;hp+=2) {
+            char hh[] = { hp[0], hp[1], 0 }, *hhp;
+            int b = strtol(hh, &hhp, 0x10);
+
+            if(hhp - hh != 2) {
+                printf(">>>>>>>>>>>>>> broken hex value on script line %d: %s\n", info->script_line, hp);
+                exit(0);
+            }
+            Buffer[rc] = b;
+            rc++;
+        }
+    }
 
     printf("rc=%d\r\n", rc);
+    *LengthTransferred = rc;
+
+    printf("blackbox: usb %d dsc ", dti);
     for(i=0;i<rc;i++) {
         printf("%02x", Buffer[i]);
     }
     printf("\r\n");
-    *LengthTransferred = rc;
 
     if(rc < 0)
         return FALSE;
@@ -97,13 +136,6 @@ WinUsb_ControlTransfer(
     struct driver_info *info = InterfaceHandle;
     int rc, i;
 
-    /*
-    if(pthread_self() != 0xcd3b40) {
-    printf("USB >>>>>>>>>> WinUsb_ControlTransfer -- sleeping");
-        sleep(5);
-    }
-    */
-
     printf("USB %lx >>>>>>>>>> WinUsb_ControlTransfer %x %x %x %x %x\r\n", 
                 pthread_self(),
                 SetupPacket.RequestType, 
@@ -111,10 +143,9 @@ WinUsb_ControlTransfer(
                 SetupPacket.Value, 
                 SetupPacket.Index,
                 SetupPacket.Length);
-
     printf("Before: ");
     for(i=0;i<BufferLength;i++) {
-        if(i > 8000000) {
+        if(i > 80000) {
             printf("...");
             break;
         } else {
@@ -122,9 +153,15 @@ WinUsb_ControlTransfer(
         }
     }
     printf("\r\n");
-    rc = libusb_control_transfer(info->dev,
-        SetupPacket.RequestType, SetupPacket.Request, SetupPacket.Value, SetupPacket.Index,
-        Buffer, SetupPacket.Length, 10000);
+
+    if(info->script == NULL) {
+        rc = libusb_control_transfer(info->dev,
+            SetupPacket.RequestType, SetupPacket.Request, SetupPacket.Value, SetupPacket.Index,
+            Buffer, SetupPacket.Length, 10000);
+    }
+    else {
+        rc = SetupPacket.Length;
+    }
     printf("rc=%d\r\n", rc);
     
     if(rc < 0) 
@@ -136,7 +173,6 @@ WinUsb_ControlTransfer(
     printf("\r\n");
 
     *LengthTransferred = rc;
-
     return TRUE;
 }
 
@@ -164,70 +200,99 @@ WinUsb_ReadPipe(
         printf("USB >>>>>>>>>>> unknown pipe!\n");
         return FALSE;
     }
-
-    switch(wpi->PipeType) {
-        case UsbdPipeTypeBulk:
-            printf("USB >>>>>>>>>>> bulk xfer\n");
-            rc = libusb_bulk_transfer(
-                    dev->dev, 
-                    PipeID, 
-                    Buffer, 
-                    BufferLength, 
-                    (int*)LengthTransferred, 
-                    dev->timeouts[PipeID]+1000);
-            //sleep(3);
-            break;
-
-        case UsbdPipeTypeInterrupt:
-            printf("USB >>>>>>>>>>> interrupt xfer?\n");
-            dev->abort[PipeID] = 1;
-            for(i=0;;) {
-                rc = libusb_interrupt_transfer(
+    if(dev->script == NULL) {
+        switch(wpi->PipeType) {
+            case UsbdPipeTypeBulk:
+                printf("USB >>>>>>>>>>> bulk xfer\n");
+                rc = libusb_bulk_transfer(
                         dev->dev, 
                         PipeID, 
                         Buffer, 
                         BufferLength, 
                         (int*)LengthTransferred, 
-                        200);
-                
-                printf("USB >>>>>>>>>>> libusb_interrupt_transfer=%d!\n", rc);
-
-                if(rc == LIBUSB_ERROR_TIMEOUT) {
-                    if(dev->abort[PipeID] == 2) {
-                        printf("USB >>>>>>>>>>> Pipe was aborted!\n");
-                        rc = 0;
-                        break;
-                    }
-
-                    if(dev->timeouts[PipeID]) {
-                        if(i > dev->timeouts[PipeID])
-                            break;
-                        else
-                            i += 200;
-                    }
-                    continue;
-                }
-
+                        dev->timeouts[PipeID]+1000);
+                //sleep(3);
                 break;
-            }
-            dev->abort[PipeID] = 0;
-            break;
 
-        default:
-            printf("USB >>>>>>>>>>> unknown pipe type!\n");
+            case UsbdPipeTypeInterrupt:
+                printf("USB >>>>>>>>>>> interrupt xfer?\n");
+                dev->abort[PipeID] = 1;
+                for(i=0;;) {
+                    rc = libusb_interrupt_transfer(
+                            dev->dev, 
+                            PipeID, 
+                            Buffer, 
+                            BufferLength, 
+                            (int*)LengthTransferred, 
+                            200);
+                    
+                    printf("USB >>>>>>>>>>> libusb_interrupt_transfer=%d!\n", rc);
+
+                    if(rc == LIBUSB_ERROR_TIMEOUT) {
+                        if(dev->abort[PipeID] == 2) {
+                            printf("USB >>>>>>>>>>> Pipe was aborted!\n");
+                            rc = 0;
+                            break;
+                        }
+
+                        if(dev->timeouts[PipeID]) {
+                            if(i > dev->timeouts[PipeID])
+                                break;
+                            else
+                                i += 200;
+                        }
+                        continue;
+                    }
+
+                    break;
+                }
+                dev->abort[PipeID] = 0;
+                break;
+
+            default:
+                printf("USB >>>>>>>>>>> unknown pipe type!\n");
+                return FALSE;
+        }
+
+        if(rc < 0)  {
+            printf(">>>>>>>>>>> xfer Failed - %s\n", libusb_error_name(rc));
+            exit(0);
             return FALSE;
+        }
+    }
+    else {
+        int p;
+        char dir[10];
+        char hex[8000000], *hp;
+
+        dev->script_line++;
+        fscanf(dev->script, "blackbox: usb %d %s %s\n", &p, dir, hex);
+        if(p != PipeID) {
+            printf(">>>>>>>>>>>>>> wrong pipe on script line %d (expected %d, requested %d)\n", dev->script_line, p, PipeID);
+            exit(0);
+        }
+        if(strcmp(dir, "<<<") != 0) {
+            printf(">>>>>>>>>>>>>> wrong direction on script line %d (expected %s, requested %s)\n", dev->script_line, dir, "<<<");
+            exit(0);
+        }
+        *LengthTransferred=0;
+        for(hp=hex;*hp;hp+=2) {
+            char hh[] = { hp[0], hp[1], 0 }, *hhp;
+            int b = strtol(hh, &hhp, 0x10);
+
+            if(hhp - hh != 2) {
+                printf(">>>>>>>>>>>>>> broken hex value on script line %d: %s\n", dev->script_line, hp);
+                exit(0);
+            }
+            Buffer[*LengthTransferred] = b;
+            (*LengthTransferred)++;
+        }
+
     }
 
-    if(rc < 0)  {
-        printf(">>>>>>>>>>> xfer Failed - %s\n", libusb_error_name(rc));
-        exit(0);
-        return FALSE;
-    }
-    
-
-    printf("usb %d <<< ", PipeID);
+    printf("blackbox: usb %d <<< ", PipeID);
     for(i=0;i<*LengthTransferred;i++) {
-        if(i > 8000000) {
+        if(i > 80000) {
             printf("....");
             break;
         } else {
@@ -277,15 +342,15 @@ WinUsb_WritePipe(
             LPOVERLAPPED Overlapped)
 {
     int i, rc;
-    struct driver_info *info = InterfaceHandle;
+    struct driver_info *dev = InterfaceHandle;
     int send;
 
 
     printf("USB %lx >>>>>>>>>> WinUsb_WritePipe PipeID=%x\r\n", pthread_self(), PipeID);
     
-    printf("usb %d >>> ", PipeID);
+    printf("blackbox: usb %d >>> ", PipeID);
     for(i=0;i<BufferLength;i++) {
-        if(i > 8000000) {
+        if(i > 80000) {
             printf("...");
             break;
         } else {
@@ -294,38 +359,61 @@ WinUsb_WritePipe(
     }
     printf("\r\n");
 
-    if(Buffer[0] == 0x10 && Buffer[1] == 0 && Buffer[2] == 0) {
-        abort();
-        return FALSE;
-    }
+    if(dev->script == NULL) {
+        if(Buffer[0] == 0x10 && Buffer[1] == 0 && Buffer[2] == 0) {
+            abort();
+            return FALSE;
+        }
 
-    rc = libusb_bulk_transfer(info->dev,
-            PipeID,
-            Buffer,
-            BufferLength, 
-            &send, 
-            info->timeouts[PipeID]+1000);
-    printf("rc=%d send=%d\r\n", rc, send);
+        rc = libusb_bulk_transfer(dev->dev,
+                PipeID,
+                Buffer,
+                BufferLength, 
+                &send, 
+                dev->timeouts[PipeID]+1000);
+        printf("rc=%d send=%d\r\n", rc, send);
 
-#if 0
-    if(rc < 0) {
-        sleep(10);
-        claim_device(info);
-        sleep(10);
-        rc = libusb_bulk_transfer(info->dev,
-            PipeID,
-            Buffer,
-            BufferLength, 
-            &send, 
-            info->timeouts[PipeID]);
-        printf("retry: rc=%d send=%d\r\n", rc, send);
+        if(rc < 0) {
+            printf(">>>>>>>>>>> xfer Failed - %s\n", libusb_error_name(rc));
+            exit(0);
+            return FALSE;
+        }
     }
-#endif
-    
-    if(rc < 0) {
-        printf(">>>>>>>>>>> xfer Failed - %s\n", libusb_error_name(rc));
-        exit(0);
-        return FALSE;
+    else {
+        int p;
+        char dir[10];
+        char hex[8000000], *hp;
+
+        dev->script_line++;
+        fscanf(dev->script, "blackbox: usb %d %s %s\n", &p, dir, hex);
+        if(p != PipeID) {
+            printf(">>>>>>>>>>>>>> wrong pipe on script line %d (expected %d, requested %d)\n", dev->script_line, p, PipeID);
+            exit(0);
+        }
+        if(strcmp(dir, ">>>") != 0) {
+            printf(">>>>>>>>>>>>>> wrong direction on script line %d (expected %s, requested %s)\n", dev->script_line, dir, ">>>");
+            exit(0);
+        }
+        send=0;
+        for(hp=hex;*hp;hp+=2) {
+            char hh[] = { hp[0], hp[1], 0 }, *hhp;
+            int b = strtol(hh, &hhp, 0x10);
+
+            if(hhp - hh != 2) {
+                printf(">>>>>>>>>>>>>> broken hex value on script line %d: %s\n", dev->script_line, hp);
+                exit(0);
+            }
+
+            if(Buffer[send] != b) {
+                printf(">>>>>>>>>>>>>> send byte mismatch onscript line %d, column %ld: %02x != %02x\n", dev->script_line, hp-hex, b, Buffer[send]);
+                exit(0);
+            }
+            send++;
+        }
+        if(send != BufferLength) {
+            printf(">>>>>>>>>>>>>> send != BufferLength on script line %d\n", dev->script_line);
+            exit(0);
+        }
     }
     *LengthTransferred = send;
 
@@ -471,17 +559,25 @@ BOOL WINAPI DllMain( HINSTANCE hinstDLL, DWORD     fdwReason, LPVOID    lpvReser
 WINBOOL WINAPI WinUsb_Initialize (HANDLE DeviceHandle, PWINUSB_INTERFACE_HANDLE InterfaceHandle)
 {
     struct driver_info *info = malloc(sizeof(struct driver_info));
+    const char *usbscript = getenv("USB_SCRIPT");
 
     memset(info, 0, sizeof(*info));
 
-    info->dev = NULL;
     *InterfaceHandle = info;
 
     printf("USB >>>>>>>>>> WinUsb_Initialize\r\n");
-    libusb_init(&info->ctx);
-    libusb_set_debug(info->ctx, 3);
+    
+    if(!usbscript || !*usbscript) {
+        info->dev = NULL;
+        libusb_init(&info->ctx);
+        //libusb_set_debug(info->ctx, 3);
 
-    claim_device(info);
+        claim_device(info);
+    }
+    else {
+        info->script=fopen(usbscript, "rt");
+        info->script_line = 0;
+    }
 
     return TRUE;
 }
