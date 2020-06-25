@@ -713,10 +713,11 @@ NTSTATUS WINAPI BCryptHashData( BCRYPT_HASH_HANDLE handle, UCHAR *input, ULONG s
     if (!hash || hash->hdr.magic != MAGIC_HASH) return STATUS_INVALID_HANDLE;
     if (!input) return STATUS_SUCCESS;
 
-        for(int i=0;i<size;i++) {
-            printf("%02x", input[i]);
-        }
-        printf("\n");
+    printf("Hash input: ");
+    for(int i=0;i<size;i++) {
+        printf("%02x", input[i]);
+    }
+    printf("\n");
     return hash_update( &hash->inner, hash->alg_id, input, size );
 }
 
@@ -737,7 +738,8 @@ NTSTATUS WINAPI BCryptFinishHash( BCRYPT_HASH_HANDLE handle, UCHAR *output, ULON
     if (!(hash->flags & HASH_FLAG_HMAC))
     {
         if ((status = hash_finish( &hash->inner, hash->alg_id, output, size ))) return status;
-        for(int i=0;i<size;i++) {
+        printf("Hash out: ");
+        for(int i=0;i<0x20;i++) {
             printf("%02x", output[i]);
         }
         printf("\n");
@@ -750,7 +752,8 @@ NTSTATUS WINAPI BCryptFinishHash( BCRYPT_HASH_HANDLE handle, UCHAR *output, ULON
     if ((status = hash_finish( &hash->inner, hash->alg_id, buffer, hash_length ))) return status;
     if ((status = hash_update( &hash->outer, hash->alg_id, buffer, hash_length ))) return status;
     if ((status = hash_finish( &hash->outer, hash->alg_id, output, size ))) return status;
-    for(int i=0;i<size;i++) {
+    printf("Hash out: ");
+    for(int i=0;i<0x20;i++) {
         printf("%02x", output[i]);
     }
     printf("\n");

@@ -56,13 +56,15 @@ MAKE_FUNCPTR(BN_CTX_free);
 MAKE_FUNCPTR(CRYPTO_free);
 MAKE_FUNCPTR(BN_bn2binpad);
 MAKE_FUNCPTR(ECDSA_SIG_get0);
-MAKE_FUNCPTR(ECDSA_do_sign);
+MAKE_FUNCPTR(ECDSA_do_sign_ex);
+MAKE_FUNCPTR(ECDSA_sign_setup);
 MAKE_FUNCPTR(EC_KEY_set_public_key_affine_coordinates);
 MAKE_FUNCPTR(EC_KEY_new_by_curve_name);
 MAKE_FUNCPTR(ERR_get_error);
 MAKE_FUNCPTR(ERR_error_string);
 MAKE_FUNCPTR(EC_KEY_set_private_key);
 MAKE_FUNCPTR(BN_bn2hex);
+MAKE_FUNCPTR(BN_hex2bn);
 MAKE_FUNCPTR(EVP_PKEY_derive_init);
 MAKE_FUNCPTR(EVP_PKEY_derive_set_peer);
 MAKE_FUNCPTR(EVP_PKEY_derive);
@@ -104,13 +106,15 @@ openssl_init(void)
     LOAD_FUNCPTR(CRYPTO_free)
     LOAD_FUNCPTR(BN_bn2binpad)
     LOAD_FUNCPTR(ECDSA_SIG_get0)
-    LOAD_FUNCPTR(ECDSA_do_sign)
+    LOAD_FUNCPTR(ECDSA_do_sign_ex)
+    LOAD_FUNCPTR(ECDSA_sign_setup)
     LOAD_FUNCPTR(EC_KEY_set_public_key_affine_coordinates)
     LOAD_FUNCPTR(EC_KEY_new_by_curve_name)
     LOAD_FUNCPTR(ERR_get_error)
     LOAD_FUNCPTR(ERR_error_string)
     LOAD_FUNCPTR(EC_KEY_set_private_key)
     LOAD_FUNCPTR(BN_bn2hex)
+    LOAD_FUNCPTR(BN_hex2bn)
     LOAD_FUNCPTR(EVP_PKEY_derive_init)
     LOAD_FUNCPTR(EVP_PKEY_derive_set_peer)
     LOAD_FUNCPTR(EVP_PKEY_derive)
@@ -173,6 +177,9 @@ derive_ec_pubkey(unsigned char *buf)
     return 0;
 }
 
+static const char *kinv_hex = "474DB1EE0A2333B76A8A74998B4A301B20AA99006458EFFB96B87CD73C1E5C1B";
+static const char *rp_hex = "845B1507DD31E2836C9635AE403EE3367AD3176D0E15DDC94740D2599D80A7B8";
+
 int ecc_sign(
             PUCHAR px, ULONG sx,
             PUCHAR py, ULONG sy,
@@ -205,7 +212,25 @@ int ecc_sign(
     }
 #endif
 
-    ECDSA_SIG *sig = pECDSA_do_sign(src, src_len, key);
+    BIGNUM *kinv;
+    BIGNUM *rp;
+
+#if 0
+    if(!pECDSA_sign_setup(key, NULL, &kinv, &rp)) {
+        ERR("oops, ECDSA_sign_setup failed\n");
+        return -1;
+    }
+#else
+    pBN_hex2bn(&kinv, kinv_hex);
+    pBN_hex2bn(&rp, rp_hex);
+#endif
+    ERR("kinv=%s\n", sBN_bn2hex(kinv));
+    ERR("rp=%s\n", sBN_bn2hex(rp));
+
+    ECDSA_SIG *sig = pECDSA_do_sign_ex(src, src_len, kinv, rp, key);
+    pBN_free(kinv);
+    pBN_free(rp);
+
     if(sig == NULL) {
         ERR("oops, ECDSA_do_sign failed\n");
         return -1;

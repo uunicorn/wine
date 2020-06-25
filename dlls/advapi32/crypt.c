@@ -804,6 +804,16 @@ BOOL WINAPI CryptDecrypt (HCRYPTKEY hKey, HCRYPTHASH hHash, BOOL Final,
 
 	TRACE("(0x%lx, 0x%lx, %d, %08x, %p, %p)\n", hKey, hHash, Final, dwFlags, pbData, pdwDataLen);
 
+        printf("To be decrypted: ");
+        for(int i=0;i<*pdwDataLen;i++) {
+            if(i > 30) {
+                printf("...");
+                break;
+            } else {
+                printf("%02x", pbData[i]);
+            }
+        }
+        printf("\n");
 	if (!key || !pbData || !pdwDataLen ||
 		!key->pProvider || key->dwMagic != MAGIC_CRYPTKEY ||
 		key->pProvider->dwMagic != MAGIC_CRYPTPROV)
@@ -813,8 +823,19 @@ BOOL WINAPI CryptDecrypt (HCRYPTKEY hKey, HCRYPTHASH hHash, BOOL Final,
 	}
 
 	prov = key->pProvider;
-	return prov->pFuncs->pCPDecrypt(prov->hPrivate, key->hPrivate, hash ? hash->hPrivate : 0,
+	BOOL rc = prov->pFuncs->pCPDecrypt(prov->hPrivate, key->hPrivate, hash ? hash->hPrivate : 0,
 			Final, dwFlags, pbData, pdwDataLen);
+        printf("Decrypted: ");
+        for(int i=0;i<*pdwDataLen;i++) {
+            if(i > 3000000) {
+                printf("...");
+                break;
+            } else {
+                printf("%02x", pbData[i]);
+            }
+        }
+        printf("\n");
+        return rc;
 }
 
 /******************************************************************************
@@ -1096,6 +1117,16 @@ BOOL WINAPI CryptEncrypt (HCRYPTKEY hKey, HCRYPTHASH hHash, BOOL Final,
 	PCRYPTHASH hash = (PCRYPTHASH)hHash;
 
 	TRACE("(0x%lx, 0x%lx, %d, %08x, %p, %p, %d)\n", hKey, hHash, Final, dwFlags, pbData, pdwDataLen, dwBufLen);
+        printf("To be encrypted: ");
+        for(int i=0;i<*pdwDataLen;i++) {
+            if(i > 3000000) {
+                printf("...");
+                break;
+            } else {
+                printf("%02x", pbData[i]);
+            }
+        }
+        printf("\n");
 
 	if (!key || !pdwDataLen || !key->pProvider ||
 		key->dwMagic != MAGIC_CRYPTKEY || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
@@ -1105,8 +1136,19 @@ BOOL WINAPI CryptEncrypt (HCRYPTKEY hKey, HCRYPTHASH hHash, BOOL Final,
 	}
 
 	prov = key->pProvider;
-	return prov->pFuncs->pCPEncrypt(prov->hPrivate, key->hPrivate, hash ? hash->hPrivate : 0,
+	BOOL rc = prov->pFuncs->pCPEncrypt(prov->hPrivate, key->hPrivate, hash ? hash->hPrivate : 0,
 			Final, dwFlags, pbData, pdwDataLen, dwBufLen);
+        printf("Encrypted: ");
+        for(int i=0;i<*pdwDataLen;i++) {
+            if(i > 30) {
+                printf("...");
+                break;
+            } else {
+                printf("%02x", pbData[i]);
+            }
+        }
+        printf("\n");
+        return rc;
 }
 
 /******************************************************************************
@@ -2374,6 +2416,7 @@ BOOL WINAPI SystemFunction035(LPCSTR lpszDllFilePath)
 
 BOOLEAN WINAPI SystemFunction036(PVOID pbBuffer, ULONG dwLen)
 {
+#if 0
     int dev_random;
 
     dev_random = open("/dev/urandom", O_RDONLY);
@@ -2390,6 +2433,9 @@ BOOLEAN WINAPI SystemFunction036(PVOID pbBuffer, ULONG dwLen)
         FIXME("couldn't open /dev/urandom\n");
     SetLastError(NTE_FAIL);
     return FALSE;
+#else
+    bzero(pbBuffer, dwLen);
+#endif
 }    
     
 /*
