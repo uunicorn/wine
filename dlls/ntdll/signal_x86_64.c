@@ -2645,6 +2645,7 @@ static NTSTATUS call_stack_handlers( EXCEPTION_RECORD *rec, CONTEXT *orig_contex
     CONTEXT context;
     LDR_MODULE *module;
     NTSTATUS status;
+    ULONG64 prip = 0;
 
     context = *orig_context;
     dispatch.TargetIp      = 0;
@@ -2657,6 +2658,12 @@ static NTSTATUS call_stack_handlers( EXCEPTION_RECORD *rec, CONTEXT *orig_contex
         dispatch.ImageBase = 0;
         dispatch.ControlPc = context.Rip;
         dispatch.ScopeIndex = 0;
+
+        if (prip == context.Rip) {
+            FIXME( "uunicorn: failed to unwind: breaking indefinite loop\n" );
+            goto force_up;
+        } else
+            prip = context.Rip;
 
         /* first look for PE exception information */
 
@@ -2705,6 +2712,8 @@ static NTSTATUS call_stack_handlers( EXCEPTION_RECORD *rec, CONTEXT *orig_contex
             }
         }
         else WARN( "exception data not found in %s\n", debugstr_w(module->BaseDllName.Buffer) );
+
+    force_up:
 
         context.Rip = *(ULONG64 *)context.Rsp;
         context.Rsp = context.Rsp + sizeof(ULONG64);
