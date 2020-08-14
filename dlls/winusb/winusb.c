@@ -6,6 +6,9 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #undef _WIN32
 #undef _WIN64
@@ -13,11 +16,15 @@
 #undef interface
 #include <libusb.h>
 
-#define MY_VENDOR   0x138a
-#define MY_PRODUCT  0x0097
+#define MAX_DEVICES 100
 
 struct driver_info {
     libusb_context *ctx;
+    struct {
+        long vend_id;
+        long prod_id;
+    } supported_devices[100];
+    int supported_devices_cnt;
     struct libusb_device_descriptor descr;
     libusb_device_handle * dev;
 
@@ -305,11 +312,11 @@ WinUsb_ReadPipe(
     return TRUE;
 }
 
-void
+WINBOOL
 claim_device(struct driver_info *info)
 {
     libusb_device ** dev_list;
-    int i;
+    int i, j;
     int dev_cnt = libusb_get_device_list(info->ctx, &dev_list);
 
     for (i = 0; i < dev_cnt; i++) {
@@ -317,19 +324,24 @@ claim_device(struct driver_info *info)
 
         libusb_get_device_descriptor(dev_list[i], &descriptor);
 
-        if (MY_VENDOR == descriptor.idVendor && MY_PRODUCT == descriptor.idProduct) {
-            printf("!!!!!!!!!!!! Found device %04x:%04x\n", descriptor.idVendor, descriptor.idProduct);
+        for(j = 0;j < info->supported_devices_cnt;j++) {
+            if (info->supported_devices[j].vend_id == descriptor.idVendor && 
+                    info->supported_devices[j].prod_id == descriptor.idProduct) {
+                printf("!!!!!!!!!!!! Found device %04x:%04x\n", descriptor.idVendor, descriptor.idProduct);
 
-            err(libusb_get_device_descriptor(dev_list[i], &info->descr));
-            err(libusb_open(dev_list[i], &info->dev));
-            break;
+                err(libusb_get_device_descriptor(dev_list[i], &info->descr));
+                err(libusb_open(dev_list[i], &info->dev));
+                err(libusb_reset_device(info->dev));
+                err(libusb_set_configuration(info->dev, 1));
+                err(libusb_claim_interface(info->dev, 0));
+
+                return TRUE;
+            }
         }
     }
 
-    err(libusb_reset_device(info->dev));
-    err(libusb_set_configuration(info->dev, 1));
-    err(libusb_claim_interface(info->dev, 0));
-
+    printf("!!!!!!!!!!!! No matching devices found\n");
+    return FALSE;
 }
 
 WINBOOL WINAPI 
@@ -560,26 +572,88 @@ WINBOOL WINAPI WinUsb_Initialize (HANDLE DeviceHandle, PWINUSB_INTERFACE_HANDLE 
 {
     struct driver_info *info = malloc(sizeof(struct driver_info));
     const char *usbscript = getenv("USB_SCRIPT");
+    char buf[10*1024];
+    char *saveptr, *line;
+    DWORD sz;
+    OVERLAPPED o = { 0 };
 
     memset(info, 0, sizeof(*info));
 
     *InterfaceHandle = info;
+ 
+    printf("USB >>>>>>>>>> WinUsb_Initialize: %p\r\n", DeviceHandle);
+    if(DeviceHandle == INVALID_HANDLE_VALUE) {
+        printf("USB >>>>>>>>>>> WinUsb_Initialize: DeviceHandle == INVALID_HANDLE_VALUE\r\n");
+        return FALSE;
+    }
 
-    printf("USB >>>>>>>>>> WinUsb_Initialize\r\n");
+    o.hEvent = CreateEventA(NULL, TRUE, FALSE, NULL);
+
+    if(!ReadFile(DeviceHandle, buf, sizeof(buf)-1, &sz, &o) && GetLastError() != ERROR_IO_PENDING) {
+        printf("USB >>>>>>>>>>> WinUsb_Initialize: ReadFile failed: %d\r\n", GetLastError());
+        return FALSE;
+    }
+
+    if(!GetOverlappedResult(DeviceHandle, &o, &sz, TRUE)) {
+        printf("USB >>>>>>>>>>> WinUsb_Initialize: GetOverlappedResult failed: %d\r\n", GetLastError());
+        return FALSE;
+    }
+
+    CloseHandle(o.hEvent);
+    CloseHandle(DeviceHandle);
+
+    buf[sz] = 0;
+    line = strtok_r(buf, "\r\n", &line);
+
+    for(info->supported_devices_cnt = 0, line = strtok_r(buf, "\r\n", &saveptr);
+            info->supported_devices_cnt < MAX_DEVICES && line;
+            info->supported_devices_cnt++, line = strtok_r(NULL, "\r\n", &saveptr)) {
+        long vend_id, prod_id;
+        char *colon;
+
+        if(!*line)
+            continue;
+
+        colon = strchr(line, ':');
+        
+        if(colon == NULL) {
+            printf("USB >>>>>>>>>>> WinUsb_Initialize: missing ':' in usb.txt\r\n");
+            return FALSE;
+        }
+
+        *colon = 0;
+        vend_id = strtol(line, NULL, 16);
+        prod_id = strtol(colon+1, NULL, 16);
+        
+        info->supported_devices[info->supported_devices_cnt].vend_id = vend_id;
+        info->supported_devices[info->supported_devices_cnt].prod_id = prod_id; 
+
+        printf("USB >>>>>>>>>>> WinUsb_Initialize: usb.txt: %04lx:%04lx\r\n", vend_id, prod_id);
+    }
+
+    if(info->supported_devices_cnt == 0) {
+        printf("USB >>>>>>>>>>> WinUsb_Initialize: usb.txt should have at least one line like <vendor>:<product>\r\n");
+        return FALSE;
+    }
+
     
     if(!usbscript || !*usbscript) {
         info->dev = NULL;
         libusb_init(&info->ctx);
         //libusb_set_debug(info->ctx, 3);
 
-        claim_device(info);
+        return claim_device(info);
     }
     else {
-        info->script=fopen(usbscript, "rt");
-        info->script_line = 0;
-    }
+        info->script = fopen(usbscript, "rt");
+        if(info->script == NULL) {
+            printf("USB >>>>>>>>>>> WinUsb_Initialize: failed to open the USB script %s\r\n", usbscript);
+            return FALSE;
+        }
 
-    return TRUE;
+        info->script_line = 0;
+        return TRUE;
+    }
 }
 
 WINBOOL WINAPI WinUsb_GetOverlappedResult (WINUSB_INTERFACE_HANDLE InterfaceHandle, LPOVERLAPPED lpOverlapped, LPDWORD lpNumberOfBytesTransferred, WINBOOL bWait)
