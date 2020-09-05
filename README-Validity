@@ -1,29 +1,8 @@
-Configured with:
+Hacked version of Wine for https://github.com/uunicorn/synaWudfBioUsb-sandbox
 
-./configure \
-    --with-gnutls  \
-    --without-hal \
-    --disable-tests  \
-    --enable-maintainer-mode \
-    --libdir=/usr/lib/x86_64-linux-gnu/wine \
-    --bindir=/usr/lib/wine  \
-    --mandir=/usr/share/man  \
-    --includedir=/usr/include/wine \
-    --datarootdir=/usr/share/wine  \
-    CFLAGS='-g -O2 -fdebug-prefix-map=<your_source_tree_location>=. -fstack-protector-strong -Wformat -Werror=format-security -Wno-error' \
-    CPPFLAGS='-Wdate-time -D_FORTIFY_SOURCE=2'  \
-    CXXFLAGS='-g -O2 -fdebug-prefix-map=<your_source_tree_location>=. -fstack-protector-strong -Wformat -Werror=format-security' \
-    FCFLAGS='-g -O2 -fdebug-prefix-map=<your_source_tree_location>=. -fstack-protector-strong'  \
-    FFLAGS='-g -O2 -fdebug-prefix-map=<your_source_tree_location>=. -fstack-protector-strong'  \
-    GCJFLAGS='-g -O2 -fdebug-prefix-map=<your_source_tree_location>=. -fstack-protector-strong'  \
-    LDFLAGS='-Wl,-Bsymbolic-functions -Wl,-z,relro -Wl,-z,now -Wl,-rpath,/usr/lib/x86_64-linux-gnu/wine'  \
-    OBJCFLAGS='-g -O2 -fdebug-prefix-map=<your_source_tree_location>=. -fstack-protector-strong -Wformat -Werror=format-security'  \
-    OBJCXXFLAGS='-g -O2 -fdebug-prefix-map=<your_source_tree_location>=. -fstack-protector-strong -Wformat -Werror=format-security'  \
-    --without-oss  \
-    --enable-win64
+To build the container:
+```sh
+docker build -t wine:validity .
+```
 
-
-Replace <your_source_tree_location> whith a place where you checked out the sources.
-
-USB VID:PID is hardcoded in dlls/winusb/winusb.c. 
-Change it to whatever you have. By default it is 138a:0097.
+Be patient, it will take about 12 minutes to build on a 4-core i7 machine.
