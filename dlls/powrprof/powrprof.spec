@@ -24,3 +24,4 @@
 @ stdcall WriteGlobalPwrPolicy (ptr)
 @ stdcall WriteProcessorPwrScheme (long ptr)
 @ stdcall WritePwrScheme (ptr str str ptr)
+@ stdcall PowerSettingRegisterNotification (ptr long long ptr)

@@ -26,6 +26,7 @@
 #include "winnt.h"
 #include "winreg.h"
 #include "winternl.h"
+#include "winuser.h"
 #include "powrprof.h"
 #include "wine/debug.h"
 #include "wine/unicode.h"
@@ -333,6 +334,17 @@ DWORD WINAPI PowerEnumerate(HKEY key, const GUID *scheme, const GUID *subgroup, 
    FIXME("(%p,%s,%s,%d,%d,%p,%p) stub!\n", key, debugstr_guid(scheme), debugstr_guid(subgroup),
                 flags, index, buffer, buffer_size);
    return ERROR_CALL_NOT_IMPLEMENTED;
+}
+
+DWORD WINAPI PowerSettingRegisterNotification(
+  LPCGUID       SettingGuid,
+  DWORD         Flags,
+  HANDLE        Recipient,
+  HPOWERNOTIFY  *RegistrationHandle
+)
+{
+    FIXME("(%p, %x, %p, %p) stub!\n", SettingGuid, Flags, Recipient, RegistrationHandle);
+    return ERROR_SUCCESS;
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
