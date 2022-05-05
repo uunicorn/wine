@@ -2,6 +2,7 @@ FROM debian:10
 WORKDIR /root/wine
 RUN apt-get update && apt-get install -y \
     build-essential \
+    autoconf \
     pkg-config \
     flex \
     bison \
