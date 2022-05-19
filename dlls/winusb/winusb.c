@@ -273,8 +273,13 @@ WinUsb_ReadPipe(
 
         if(rc < 0)  {
             ERR("xfer Failed - %s\n", libusb_error_name(rc));
-            exit(0);
-            return FALSE;
+
+            if(rc == LIBUSB_ERROR_TIMEOUT) {
+                SetLastError(ERROR_SEM_TIMEOUT);
+                return FALSE;
+            }
+
+            exit(0); // Don't know what to do, panic quit
         }
 
         fprintf(dev->script, "blackbox: usb %d <<< ", PipeID);
