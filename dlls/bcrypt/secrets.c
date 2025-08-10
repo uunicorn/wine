@@ -49,6 +49,7 @@ MAKE_FUNCPTR(EC_POINT_new);
 MAKE_FUNCPTR(BN_bin2bn);
 MAKE_FUNCPTR(EC_POINT_mul);
 MAKE_FUNCPTR(EC_POINT_point2buf);
+MAKE_FUNCPTR(BN_new);
 MAKE_FUNCPTR(BN_free);
 MAKE_FUNCPTR(EC_POINT_free);
 MAKE_FUNCPTR(EC_GROUP_free);
@@ -99,6 +100,7 @@ openssl_init(void)
     LOAD_FUNCPTR(BN_bin2bn)
     LOAD_FUNCPTR(EC_POINT_mul)
     LOAD_FUNCPTR(EC_POINT_point2buf)
+    LOAD_FUNCPTR(BN_new)
     LOAD_FUNCPTR(BN_free)
     LOAD_FUNCPTR(EC_POINT_free)
     LOAD_FUNCPTR(EC_GROUP_free)
@@ -187,6 +189,13 @@ int ecc_sign(
             PUCHAR src, ULONG src_len, 
             PUCHAR dst)
 {
+    ERR("Enter ecc_sign\n");
+    ERR("px ptr = %p size = %ul\n", px, sx);
+    ERR("py ptr = %p size = %ul\n", py, sy);
+    ERR("pd ptr = %p size = %ul\n", pd, sd);
+    ERR("src ptr = %p size = %ul\n", src, src_len);
+    ERR("dst ptr = %p\n", dst);
+
     EC_KEY *key = pEC_KEY_new_by_curve_name(CURVE_NID);
     BIGNUM *x = pBN_bin2bn(px, sx, NULL);
     BIGNUM *y = pBN_bin2bn(py, sy, NULL);
@@ -205,15 +214,17 @@ int ecc_sign(
         ERR("oops, EC_KEY_set_public_key_affine_coordinates failed: %s\n", pERR_error_string(pERR_get_error(), NULL));
         return -1;
     }
+    ERR("After Set private key\n");
 #if 1
     if(!pEC_KEY_set_public_key_affine_coordinates(key, x, y)) {
         ERR("oops, EC_KEY_set_public_key_affine_coordinates failed: %s\n", pERR_error_string(pERR_get_error(), NULL));
         return -1;
     }
+    ERR("After Set public key\n");
 #endif
 
-    BIGNUM *kinv;
-    BIGNUM *rp;
+    BIGNUM *kinv = pBN_new();
+    BIGNUM *rp = pBN_new();;
 
 #if 0
     if(!pECDSA_sign_setup(key, NULL, &kinv, &rp)) {
@@ -227,6 +238,7 @@ int ecc_sign(
     ERR("kinv=%s\n", sBN_bn2hex(kinv));
     ERR("rp=%s\n", sBN_bn2hex(rp));
 
+    ERR("After BIGNUM convert");
     ECDSA_SIG *sig = pECDSA_do_sign_ex(src, src_len, kinv, rp, key);
     pBN_free(kinv);
     pBN_free(rp);
