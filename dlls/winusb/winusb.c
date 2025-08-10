@@ -391,10 +391,10 @@ WinUsb_WritePipe(
         fprintf(dev->script, "\r\n");
         fflush(dev->script);
 
-        if(Buffer[0] == 0x10 && Buffer[1] == 0 && Buffer[2] == 0) {
-            abort();
-            return FALSE;
-        }
+        // if(Buffer[0] == 0x10 && Buffer[1] == 0 && Buffer[2] == 0) {
+        //     abort();
+        //     return FALSE;
+        // }
 
         rc = libusb_bulk_transfer(dev->dev,
                 PipeID,
