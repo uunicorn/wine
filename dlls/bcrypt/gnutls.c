@@ -1031,7 +1031,7 @@ NTSTATUS get_gnutls_ecc_key_params(
 
     int ret;
 
-    if ((ret = pgnutls_privkey_export_ecc_raw( key->u.a.handle, &curve, x, y, d )))
+    if ((ret = pgnutls_privkey_export_ecc_raw( key->u.a.handle, curve, x, y, d )))
     {
         FIXME("pgnutls_privkey_export_ecc_raw: %s\n", pgnutls_strerror(ret));
         return STATUS_INTERNAL_ERROR;

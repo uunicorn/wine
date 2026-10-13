@@ -24,6 +24,11 @@
 
 #include <openssl/err.h>
 #include <openssl/ec.h>
+
+#include <gnutls/abstract.h>
+NTSTATUS get_gnutls_ecc_key_params(BCRYPT_KEY_HANDLE hKey,
+                                   gnutls_ecc_curve_t *curve,
+                                   gnutls_datum_t *x, gnutls_datum_t *y, gnutls_datum_t *d);
 #include <openssl/bn.h>
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
@@ -236,8 +241,8 @@ int ecc_sign(
         return -1;
     }
 
-    BIGNUM *r = NULL;
-    BIGNUM *s = NULL;
+    const BIGNUM *r = NULL;
+    const BIGNUM *s = NULL;
 
     pECDSA_SIG_get0(sig, &r, &s);
 
